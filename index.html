@@ -181,7 +181,6 @@
       <button class="act ghost" id="rerollBtn" title="리롤: 두 눈 중 선택">리롤</button>
       <button class="act ghost" id="holdBtn" title="홀드: 더 안 두고 상대만 진행">홀드</button>
       <button class="act ghost" id="shieldRerollBtn" title="선턴 실드 다시 굴리기" style="display:none">↻ 실드 다시 굴리기</button>
-      <label class="chk" title="이번 배치를 실드 주사위로 (선턴 시작 실드 등)"><input type="checkbox" id="shieldMode" /> 실드로 배치</label>
     </div>
     <div class="rerollBanner" id="rerollBanner"></div>
     <div class="row" id="actionRow">
@@ -191,22 +190,11 @@
     <div class="results" id="results"></div>
 
     <details>
-      <summary>판 직접 수정 / 설정</summary>
+      <summary>설정</summary>
       <div class="row" style="margin-top:10px">
-        <span class="label">내 판</span>
-        <input type="text" id="meEdit" placeholder="5 5 | 3 | " />
-        <button class="act" data-edit="me">적용</button>
-        <label class="chk"><input type="checkbox" id="meReroll" checked /> 내 리롤권 있음</label>
-      </div>
-      <div class="row">
-        <span class="label">상대 판</span>
-        <input type="text" id="oppEdit" placeholder="4 | 6 6 | " />
-        <button class="act" data-edit="opp">적용</button>
-      </div>
-      <div class="row">
         <span class="label">시뮬</span>
         <input type="text" id="simsInput" value="1500" style="width:80px" />
-        <span class="hint">횟수↑ = 정확↑ / 느림. 실드는 값 뒤 s (예: 6s)</span>
+        <span class="hint">횟수↑ = 정확↑ / 느림</span>
       </div>
       <div class="row">
         <button class="act" id="resetBtn">새 게임</button>

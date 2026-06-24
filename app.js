@@ -17,28 +17,6 @@
 
   var $ = function (id) { return document.getElementById(id); };
 
-  // ---------- 입력 파싱 (직접 수정용) ----------
-  function parseField(text) {
-    var dice = [];
-    text.trim().split(/\s+/).forEach(function (tok) {
-      if (!tok) return;
-      var m = /^(\d)(s([mo])?)?$/i.exec(tok);
-      if (!m) throw new Error("형식 오류: " + tok + " (예: 6, 6s, 6sm, 6so)");
-      var v = parseInt(m[1], 10);
-      if (!(v >= 1 && v <= 6)) throw new Error("주사위 눈은 1~6: " + tok);
-      var die = { value: v, shield: !!m[2] };
-      if (m[3]) die.by = m[3].toLowerCase() === "m" ? "me" : "opp";
-      dice.push(die);
-    });
-    if (dice.length > 3) throw new Error("한 필드 최대 3개");
-    return dice;
-  }
-  function parseBoard(text) {
-    var parts = text.split("|");
-    if (parts.length !== 3) throw new Error("필드 3개를 '|' 로 구분 (예: 5 5 | 3 | )");
-    return parts.map(parseField);
-  }
-
   // ---------- 렌더링 ----------
   function dieEl(d) {
     var e = document.createElement("div");
@@ -206,7 +184,6 @@
     $("turnOpp").classList.toggle("sel", ui.turn === "opp");
     $("rerollBtn").style.display =
       (ui.turn === "me" && state.me.reroll && ui.dice.length === 1) ? "" : "none";
-    $("meReroll").checked = state.me.reroll;
   }
 
   // ---------- 솔버 ----------
@@ -321,14 +298,6 @@
   }
 
   function commitMove(player, die, action) {
-    // '실드로 배치' 옵션: 일반 배치를 실드 주사위로 (선턴 시작 실드 등) — 설정용, 턴 유지
-    if (action.kind === "place" && $("shieldMode").checked) {
-      state[player].fields[action.i].push({ value: die, shield: true, by: player });
-      $("shieldMode").checked = false;
-      clearSelection();
-      render();
-      return;
-    }
     var pending = T.applyAction(state, die, action, player);
     clearSelection();
     if (pending) startShield(player, true);  // 실드 배치 후 턴 전환
@@ -534,21 +503,9 @@
       startShield(ui.shield.player, ui.shield.allowOpp, true); // 값 선택 모달 다시 열기
     };
 
-    document.querySelectorAll("[data-edit]").forEach(function (btn) {
-      btn.onclick = function () {
-        var who = btn.dataset.edit;
-        try {
-          state[who].fields = parseBoard($(who + "Edit").value);
-          clearSelection(); render();
-        } catch (e) { alert(e.message); }
-      };
-    });
-
-    $("meReroll").onchange = function () { state.me.reroll = $("meReroll").checked; render(); };
-
     $("resetBtn").onclick = function () {
       state = T.newState(); ui.turn = "me"; ui.shield = null; ui.shieldEval = null;
-      clearSelection(); $("meEdit").value = ""; $("oppEdit").value = ""; render();
+      clearSelection(); render();
       pickFirstPlayer();
     };
 
