@@ -12,7 +12,8 @@
     oppFieldBest: {},// 상대 차례: 필드 index -> {winProb(=내 승률), action}
     oppRec: null,    // 상대 최선(=내 승률 최소) 필드 index
     shield: null,    // {player, allowOpp, stage:'value'|'place', value}
-    shieldEval: null // 실드 배치 추천: {map:{'owner:i':winProb}, rec:{owner,i}}
+    shieldEval: null,// 실드 배치 추천: {map:{'owner:i':winProb}, rec:{owner,i}}
+    history: []      // 되돌리기용 상태 스냅샷 스택 [{st, turn}]
   };
 
   var $ = function (id) { return document.getElementById(id); };
@@ -184,6 +185,8 @@
     $("turnOpp").classList.toggle("sel", ui.turn === "opp");
     $("rerollBtn").style.display =
       (ui.turn === "me" && state.me.reroll && ui.dice.length === 1) ? "" : "none";
+    $("undoBtn").disabled = !ui.history.length;
+    $("restartBtn").style.display = T.isTerminal(state) ? "" : "none";
   }
 
   // ---------- 솔버 ----------
@@ -242,26 +245,32 @@
 
   function rerollAdvice(keepBest) {
     var s = Math.max(150, Math.floor(sims() / 4));
-    var total = 0;
+    var cur = ui.dice[0]; // 리롤은 원래 눈을 제외한 나머지 5개 중에서 나옴
+    var total = 0, n = 0;
     for (var v = 1; v <= 6; v++) {
+      if (v === cur) continue;
       var r = T.evaluateMoves(state, v, s);
       var b = r.length ? r[0].winProb : 0;
       total += Math.max(keepBest, b); // 이전 눈도 그대로 쓸 수 있으므로 floor=keepBest
+      n++;
     }
-    var expected = total / 6;
+    var expected = n ? total / n : keepBest;
     return { expected: expected, improvement: expected - keepBest };
   }
 
   // 선턴 실드 리롤 조언: 새로 굴렸을 때(둘 중 선택) 기대 승률.
   function shieldRerollAdvice(keepBest, allowOpp) {
     var s = Math.max(150, Math.floor(sims() / 4));
-    var total = 0;
+    var cur = ui.shield ? ui.shield.value : 0; // 리롤은 원래 눈 제외
+    var total = 0, n = 0;
     for (var v = 1; v <= 6; v++) {
+      if (v === cur) continue;
       var r = T.evaluateShield(state, v, s, allowOpp);
       var b = r.length ? r[0].winProb : 0;
       total += Math.max(keepBest, b);
+      n++;
     }
-    var expected = total / 6;
+    var expected = n ? total / n : keepBest;
     return { expected: expected, improvement: expected - keepBest };
   }
 
@@ -273,6 +282,29 @@
     var banner = $("rerollBanner"), rbtn = $("rerollBtn");
     if (banner) banner.className = "rerollBanner";
     if (rbtn) { rbtn.classList.remove("reroll-good"); rbtn.textContent = "리롤"; }
+  }
+
+  // 되돌리기: 보드를 바꾸는 수(배치/알까기/홀드) 직전에 스냅샷을 쌓는다.
+  function snapshot() {
+    ui.history.push({ st: T.clone(state), turn: ui.turn });
+    if (ui.history.length > 80) ui.history.shift();
+  }
+
+  function undo() {
+    if (!ui.history.length) return;
+    var h = ui.history.pop();
+    state = h.st;
+    ui.shield = null; ui.shieldEval = null;
+    ui._wrSig = null; ui._holdSig = null;
+    setTurn(h.turn); // clearSelection + 힌트 + render
+  }
+
+  function restartGame() {
+    ui.history = [];
+    state = T.newState(); ui.turn = "me"; ui.shield = null; ui.shieldEval = null;
+    ui._wrSig = null; ui._holdSig = null;
+    clearSelection(); render();
+    pickFirstPlayer();
   }
 
   function isDone(p) { return T.isDone(state[p]); }
@@ -298,6 +330,7 @@
   }
 
   function commitMove(player, die, action) {
+    snapshot(); // 알까기면 실드 배치까지 한 수로 묶어 되돌림
     var pending = T.applyAction(state, die, action, player);
     clearSelection();
     if (pending) startShield(player, true);  // 실드 배치 후 턴 전환
@@ -326,18 +359,20 @@
     render();
   }
 
-  function startShield(player, allowOpp, starting) {
+  function startShield(player, allowOpp, starting, exclude) {
     ui.shield = { player: player, allowOpp: allowOpp, stage: "value", value: null, starting: !!starting };
     var who = player === "me" ? "내" : "상대";
     if (starting) {
       $("modalTitle").textContent = "선턴 실드 주사위";
-      $("modalHint").textContent = who + " 선턴 실드 주사위 눈을 고르세요. (새로 굴리기 가능, " + who + " 판에만 배치)";
+      $("modalHint").textContent = who + " 선턴 실드 주사위 눈을 고르세요. " +
+        (exclude ? "(원래 눈 " + exclude + "은 제외)" : "(새로 굴리기 가능, " + who + " 판에만 배치)");
     } else {
       $("modalTitle").textContent = "알까기! 실드 주사위 눈";
       $("modalHint").textContent = (player === "me" ? "내가" : "상대가") + " 받은 실드 주사위 눈을 고르세요.";
     }
     var host = $("modalDice"); host.innerHTML = "";
     for (var v = 1; v <= 6; v++) {
+      if (v === exclude) continue; // 리롤은 원래 눈 제외
       (function (val) {
         var b = document.createElement("button");
         b.className = "die-btn"; b.textContent = val;
@@ -468,16 +503,19 @@
 
     $("rerollBtn").onclick = function () {
       if (!(ui.turn === "me" && state.me.reroll && ui.dice.length === 1)) return;
+      var prev = ui.dice[0];
       $("modalTitle").textContent = "리롤 — 새 눈";
-      $("modalHint").textContent = "리롤한 눈을 고르세요. (이전 눈 " + ui.dice[0] + " 도 그대로 선택 가능)";
+      $("modalHint").textContent = "리롤한 새 눈을 고르세요. (원래 눈 " + prev +
+        "은 제외 — 이전 눈과 새 눈 중 더 좋은 쪽이 자동 비교됨)";
       var host = $("modalDice"); host.innerHTML = "";
       for (var v = 1; v <= 6; v++) {
+        if (v === prev) continue; // 리롤은 원래 눈을 제외하고 나옴
         (function (val) {
           var b = document.createElement("button");
           b.className = "die-btn"; b.textContent = val;
           b.onclick = function () {
             state.me.reroll = false;
-            ui.dice = [ui.dice[0], val];
+            ui.dice = [prev, val];
             $("modalBg").classList.remove("show");
             evaluateMyTurn();
           };
@@ -490,6 +528,7 @@
     $("holdBtn").onclick = function () {
       if (!ui.dice.length || ui.shield || T.isTerminal(state)) return;
       var who = ui.turn;
+      snapshot();
       state[who].held = true;
       $("turnHint").textContent = (who === "me" ? "내가" : "상대가") + " 홀드함. ";
       advanceAfter(who); // 홀드한 쪽은 건너뜀 -> 상대만 진행
@@ -498,16 +537,15 @@
     $("shieldRerollBtn").onclick = function () {
       if (!(ui.shield && ui.shield.starting && ui.shield.stage === "place")) return;
       if (!state[ui.shield.player].reroll) return;
+      var prevV = ui.shield.value;
       state[ui.shield.player].reroll = false; // 게임당 1회 리롤 소모(일반 리롤과 공통)
       $("rerollBanner").className = "rerollBanner";
-      startShield(ui.shield.player, ui.shield.allowOpp, true); // 값 선택 모달 다시 열기
+      startShield(ui.shield.player, ui.shield.allowOpp, true, prevV); // 원래 눈 제외하고 다시 열기
     };
 
-    $("resetBtn").onclick = function () {
-      state = T.newState(); ui.turn = "me"; ui.shield = null; ui.shieldEval = null;
-      clearSelection(); render();
-      pickFirstPlayer();
-    };
+    $("resetBtn").onclick = restartGame;
+    $("restartBtn").onclick = restartGame;
+    $("undoBtn").onclick = undo;
 
     // 보드 클릭 위임
     ["oppBoard", "myBoard"].forEach(function (id) {

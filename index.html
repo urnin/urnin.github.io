@@ -115,6 +115,11 @@
   #holdBtn.hold-good {
     background: var(--gold); border-color: var(--gold); color: #2a2000; font-weight: 800;
   }
+  #restartBtn {
+    background: var(--gold); border-color: var(--gold); color: #2a2000; font-weight: 800;
+    padding: 9px 18px;
+  }
+  .act:disabled, .die-btn:disabled { opacity: .4; cursor: default; filter: none; }
   .rerollBanner {
     margin-top: 10px; padding: 9px 12px; border-radius: 10px; font-size: 14px; font-weight: 700;
     display: none;
@@ -152,6 +157,10 @@
 
   <div class="verdict" id="verdict"></div>
 
+  <div style="text-align:center; margin:4px 0 8px;">
+    <button class="act" id="restartBtn" style="display:none">↻ 새 게임</button>
+  </div>
+
   <div class="winrate" id="winrate">
     <div class="wrLabel" id="wrLabel"></div>
     <div class="wrBar"><div class="wrFill" id="wrFill"></div></div>
@@ -180,6 +189,7 @@
       <span id="dieBtns"></span>
       <button class="act ghost" id="rerollBtn" title="리롤: 두 눈 중 선택">리롤</button>
       <button class="act ghost" id="holdBtn" title="홀드: 더 안 두고 상대만 진행">홀드</button>
+      <button class="act ghost" id="undoBtn" title="마지막 수 되돌리기">되돌리기</button>
       <button class="act ghost" id="shieldRerollBtn" title="선턴 실드 다시 굴리기" style="display:none">↻ 실드 다시 굴리기</button>
     </div>
     <div class="rerollBanner" id="rerollBanner"></div>
