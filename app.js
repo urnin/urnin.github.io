@@ -99,10 +99,12 @@
       if (ui.shield && ui.shield.stage === "place" && ui.shieldEval) {
         var key = owner + ":" + i;
         if (key in ui.shieldEval.map) {
+          var ev = ui.shieldEval.map[key];
           var sp = document.createElement("div");
           var isRec = ui.shieldEval.rec.owner === owner && ui.shieldEval.rec.i === i;
           sp.className = "winpill" + (isRec ? " best" : "");
-          sp.textContent = "실드 " + (ui.shieldEval.map[key] * 100).toFixed(0) + "%";
+          var tag = (ui.shield.values && ui.shield.values.length > 1) ? ("[" + ev.value + "] ") : "";
+          sp.textContent = "실드 " + tag + (ev.winProb * 100).toFixed(0) + "%";
           div.appendChild(sp);
           if (isRec) div.classList.add("recommend");
         }
@@ -377,7 +379,10 @@
         var b = document.createElement("button");
         b.className = "die-btn"; b.textContent = val;
         b.onclick = function () {
-          ui.shield.value = val; ui.shield.stage = "place";
+          ui.shield.value = val;
+          // 리롤이면 원래 눈(exclude)과 새 눈 둘 다 후보 → 더 좋은 쪽 선택
+          ui.shield.values = exclude ? [exclude, val] : [val];
+          ui.shield.stage = "place";
           $("modalBg").classList.remove("show");
           if (player === "me") computeShieldAdvice();
           else $("actionHint").textContent = "실드 주사위(" + val + ") 놓을 칸을 클릭하세요" +
@@ -393,19 +398,23 @@
 
   function computeShieldAdvice() {
     ui.shieldEval = { map: {}, rec: null };
-    var res = T.evaluateShield(state, ui.shield.value, sims(), ui.shield.allowOpp);
+    var values = ui.shield.values || [ui.shield.value]; // 리롤 시 [원래 눈, 새 눈]
+    var multi = values.length > 1;
     var best = -1;
-    res.forEach(function (r) {
-      ui.shieldEval.map[r.spot.owner + ":" + r.spot.i] = r.winProb;
-      if (r.winProb > best) { best = r.winProb; ui.shieldEval.rec = r.spot; }
+    values.forEach(function (val) {
+      T.evaluateShield(state, val, sims(), ui.shield.allowOpp).forEach(function (r) {
+        var key = r.spot.owner + ":" + r.spot.i, cur = ui.shieldEval.map[key];
+        if (!cur || r.winProb > cur.winProb) ui.shieldEval.map[key] = { winProb: r.winProb, value: val };
+        if (r.winProb > best) { best = r.winProb; ui.shieldEval.rec = r.spot; }
+      });
     });
-    var rc = ui.shieldEval.rec;
-    $("actionHint").textContent = "실드(" + ui.shield.value + ") 추천: " +
-      (rc.owner === "me" ? "내" : "상대") + " " + (rc.i + 1) + "번 필드 클릭 (승률 " +
-      (best * 100).toFixed(1) + "%)";
-    $("results").textContent = res.map(function (r) {
-      return (r.spot.owner === "me" ? "내" : "상대") + " " + (r.spot.i + 1) + "번 → " +
-        (r.winProb * 100).toFixed(1) + "%";
+    var rc = ui.shieldEval.rec, rcv = ui.shieldEval.map[rc.owner + ":" + rc.i];
+    $("actionHint").textContent = "실드 추천: " + (rc.owner === "me" ? "내" : "상대") + " " +
+      (rc.i + 1) + "번 필드 클릭 (눈 " + rcv.value + ", 승률 " + (best * 100).toFixed(1) + "%)";
+    $("results").textContent = Object.keys(ui.shieldEval.map).map(function (key) {
+      var p = key.split(":"), e = ui.shieldEval.map[key];
+      return (p[0] === "me" ? "내" : "상대") + " " + (parseInt(p[1], 10) + 1) + "번 → " +
+        (multi ? "눈 " + e.value + " " : "") + (e.winProb * 100).toFixed(1) + "%";
     }).join("\n");
 
     // 선턴 실드는 리롤 가능 → 다시 굴리는 게 나은지 권유.
@@ -433,7 +442,9 @@
     if (ui.shield && ui.shield.stage === "place") {
       if (f.length >= 3) return;
       if (owner !== ui.shield.player && !ui.shield.allowOpp) return;
-      T.applyShield(state, ui.shield.value, { owner: owner, i: i }, ui.shield.player);
+      var skey = owner + ":" + i;
+      var sval = (ui.shieldEval && ui.shieldEval.map[skey]) ? ui.shieldEval.map[skey].value : ui.shield.value;
+      T.applyShield(state, sval, { owner: owner, i: i }, ui.shield.player);
       var who = ui.shield.player;
       ui.shield = null; ui.shieldEval = null;
       $("actionHint").textContent = ""; $("results").textContent = "";
