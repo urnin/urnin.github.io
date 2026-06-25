@@ -146,7 +146,7 @@
     panel.style.display = "";
     var rows = "<thead><tr><th class='num'>#</th><th>차례</th><th>행동</th>" +
       "<th class='num'>내 승률</th><th class='num'>Δ</th></tr></thead><tbody>";
-    var prev = null;
+    var prev = null, out = [];
     S.log.forEach(function (e, idx) {
       var who = e.player === "me"
         ? "<span class='who-me'>나</span>" : "<span class='who-opp'>상대</span>";
@@ -159,10 +159,10 @@
         dCell = "<span class='" + cls + "'>" + sign + " " + Math.abs(d).toFixed(0) + "%p</span>";
       }
       if (e.wr != null) prev = e.wr;
-      rows += "<tr><td class='num'>" + (idx + 1) + "</td><td>" + who + "</td><td>" + e.desc +
-        "</td><td class='num wrcell'>" + wrTxt + "</td><td class='num'>" + dCell + "</td></tr>";
+      out.push("<tr><td class='num'>" + (idx + 1) + "</td><td>" + who + "</td><td>" + e.desc +
+        "</td><td class='num wrcell'>" + wrTxt + "</td><td class='num'>" + dCell + "</td></tr>");
     });
-    tbl.innerHTML = rows + "</tbody>";
+    tbl.innerHTML = rows + out.reverse().join("") + "</tbody>";
   }
 
   function render() {

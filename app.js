@@ -205,7 +205,7 @@
     if (!panel || !tbl) return;
     if (!ui.log.length) { panel.style.display = "none"; tbl.innerHTML = ""; return; }
     panel.style.display = "";
-    var prev = null, rows = "";
+    var prev = null, out = [];
     ui.log.forEach(function (e, idx) {
       var wrTxt = e.wr == null ? "…" : (e.wr * 100).toFixed(0) + "%";
       var dTxt = "", dCls = "delta-flat";
@@ -217,18 +217,18 @@
         dTxt = "—";
       }
       if (e.wr != null) prev = e.wr;
-      rows += "<tr>" +
+      out.push("<tr>" +
         "<td class='num'>" + (idx + 1) + "</td>" +
         "<td class='who-" + e.player + "'>" + (e.player === "me" ? "나" : "상대") + "</td>" +
         "<td>" + e.desc + "</td>" +
         "<td class='num wrcell'>" + wrTxt + "</td>" +
         "<td class='num " + dCls + "'>" + dTxt + "</td>" +
-        "</tr>";
+        "</tr>");
     });
     tbl.innerHTML =
       "<thead><tr><th class='num'>#</th><th>차례</th><th>행동</th>" +
       "<th class='num'>내 승률</th><th class='num'>Δ</th></tr></thead>" +
-      "<tbody>" + rows + "</tbody>";
+      "<tbody>" + out.reverse().join("") + "</tbody>";
   }
 
   // 보드를 바꾼 수를 이력에 기록(승률은 다음 render에서 채워짐).
