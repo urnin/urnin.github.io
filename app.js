@@ -186,9 +186,13 @@
     renderWinrate();
     renderHold();
     renderShieldReroll();
-    // die 버튼 선택표시
-    Array.prototype.forEach.call(document.querySelectorAll(".die-btn"), function (btn) {
+    // '게임 시작' 전에는 차례/주사위 조작 잠금
+    var locked = !ui.started;
+    $("turnMe").disabled = locked; $("turnOpp").disabled = locked;
+    // die 버튼 선택표시 + 시작 전 잠금
+    Array.prototype.forEach.call(document.querySelectorAll("#dieBtns .die-btn"), function (btn) {
       btn.classList.toggle("sel", ui.dice.indexOf(parseInt(btn.dataset.v, 10)) >= 0);
+      btn.disabled = locked;
     });
     $("turnMe").classList.toggle("sel", ui.turn === "me");
     $("turnOpp").classList.toggle("sel", ui.turn === "opp");
@@ -503,6 +507,7 @@
   }
 
   function onFieldClick(owner, i) {
+    if (!ui.started) return; // '게임 시작' 전에는 배치 불가
     var f = state[owner].fields[i];
     if (ui.shield && ui.shield.stage === "place") {
       if (f.length >= 3) return;
@@ -544,6 +549,7 @@
 
   // ---------- 이벤트 ----------
   function selectDie(v) {
+    if (!ui.started) return; // '게임 시작' 전에는 주사위 선택 불가
     ui.dice = [v];
     if (ui.turn === "me") {
       $("turnHint").textContent = "";
@@ -587,8 +593,8 @@
   function init() {
     buildDieButtons();
 
-    $("turnMe").onclick = function () { ui.turn = "me"; clearSelection(); $("turnHint").textContent = "내 주사위 눈을 고르세요."; render(); };
-    $("turnOpp").onclick = function () { ui.turn = "opp"; clearSelection(); $("turnHint").textContent = "상대 주사위 눈을 고르세요."; render(); };
+    $("turnMe").onclick = function () { if (!ui.started) return; ui.turn = "me"; clearSelection(); $("turnHint").textContent = "내 주사위 눈을 고르세요."; render(); };
+    $("turnOpp").onclick = function () { if (!ui.started) return; ui.turn = "opp"; clearSelection(); $("turnHint").textContent = "상대 주사위 눈을 고르세요."; render(); };
 
     $("rerollBtn").onclick = function () {
       if (!(ui.turn === "me" && state.me.reroll && ui.dice.length === 1)) return;
