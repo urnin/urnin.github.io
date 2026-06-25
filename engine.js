@@ -201,23 +201,31 @@
 
   // 알까기 후 내가 받은 실드 주사위(value)를 어디 둘지 — 위치별 승률(me 기준).
   // 실드 배치 후 턴은 상대로 넘어간다.
-  function evaluateShield(st, value, sims, allowOpp) {
+  // player가 받은 실드(value)를 어디 둘지 — 위치별 승률(항상 me 기준).
+  // 실드 배치 후 턴은 상대로 넘어감. player에게 유리한 순으로 정렬.
+  function evaluateShieldFor(st, value, player, sims, allowOpp) {
     sims = sims || 1500;
     if (allowOpp === undefined) allowOpp = true;
-    var spots = shieldSpots(st, "me", allowOpp);
+    var spots = shieldSpots(st, player, allowOpp);
     var out = [];
     for (var k = 0; k < spots.length; k++) {
       var w = 0, d = 0, l = 0;
       for (var s = 0; s < sims; s++) {
         var c = clone(st);
         applyShield(c, value, spots[k]);
-        var r = playout(c, "opp");
+        var r = playout(c, other(player));
         if (r === "me") w++; else if (r === "opp") l++; else d++;
       }
       out.push({ spot: spots[k], w: w, d: d, l: l, sims: sims, winProb: (w + 0.5 * d) / sims });
     }
-    out.sort(function (x, y) { return y.winProb - x.winProb; });
+    out.sort(function (x, y) {
+      return player === "opp" ? x.winProb - y.winProb : y.winProb - x.winProb;
+    });
     return out;
+  }
+
+  function evaluateShield(st, value, sims, allowOpp) {
+    return evaluateShieldFor(st, value, "me", sims, allowOpp);
   }
 
   // 현재 판(toMove가 둘 차례) 기준, 주사위 굴리기 전 내 승률.
@@ -252,8 +260,10 @@
     newState: newState, clone: clone,
     legalActions: legalActions, applyAction: applyAction,
     shieldSpots: shieldSpots, applyShield: applyShield,
+    rollDie: rollDie, perspective: perspective,
+    greedyAction: greedyAction, greedyShield: greedyShield,
     evaluateMoves: evaluateMoves, evaluateMovesFor: evaluateMovesFor,
-    evaluateShield: evaluateShield,
+    evaluateShield: evaluateShield, evaluateShieldFor: evaluateShieldFor,
     evaluatePosition: evaluatePosition, evaluateHold: evaluateHold
   };
 

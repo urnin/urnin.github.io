@@ -13,7 +13,9 @@
     oppRec: null,    // 상대 최선(=내 승률 최소) 필드 index
     shield: null,    // {player, allowOpp, stage:'value'|'place', value}
     shieldEval: null,// 실드 배치 추천: {map:{'owner:i':winProb}, rec:{owner,i}}
-    history: []      // 되돌리기용 상태 스냅샷 스택 [{st, turn}]
+    history: [],     // 되돌리기용 상태 스냅샷 스택 [{st, turn}]
+    log: [],         // 행동 이력 [{player, desc, wr}] — 매 수의 내 승률 추이
+    started: false   // 게임 시작(선턴 선택) 전이면 빈 화면 + '게임 시작' 버튼
   };
 
   var $ = function (id) { return document.getElementById(id); };
@@ -117,6 +119,7 @@
   }
 
   function renderVerdict() {
+    if (!ui.started) { $("verdict").innerHTML = ""; return; }
     var w = T.winner(state);
     var name = { me: "나", opp: "상대", draw: "무승부" }[w];
     var color = w === "me" ? "var(--me)" : w === "opp" ? "var(--opp)" : "var(--muted)";
@@ -128,6 +131,7 @@
   function renderWinrate() {
     var lbl = $("wrLabel"), fill = $("wrFill");
     if (!lbl) return;
+    if (!ui.started) { lbl.innerHTML = ""; fill.style.width = "50%"; return; }
     if (ui.startPicking || (ui.shield && ui.shield.stage === "value")) return; // 선택 모달 중엔 보류
     var sig = JSON.stringify(state) + "|" + ui.turn;
     if (sig === ui._wrSig) return; // 판이 안 바뀌었으면 재계산 생략
@@ -188,7 +192,50 @@
     $("rerollBtn").style.display =
       (ui.turn === "me" && state.me.reroll && ui.dice.length === 1) ? "" : "none";
     $("undoBtn").disabled = !ui.history.length;
-    $("restartBtn").style.display = T.isTerminal(state) ? "" : "none";
+    $("restartBtn").style.display = (ui.started && T.isTerminal(state)) ? "" : "none";
+    var sb = $("startBtn"); if (sb) sb.style.display = ui.started ? "none" : "";
+    // 직전 수의 결과 승률을 이력에 채운다 (renderWinrate가 ui._wr 갱신 후).
+    if (ui._logPending && ui._wr != null) { ui._logPending.wr = ui._wr; ui._logPending = null; }
+    renderHistory();
+  }
+
+  // 행동 이력 테이블: 각 수 직후의 '내 승률'과 직전 대비 변화량.
+  function renderHistory() {
+    var panel = $("historyPanel"), tbl = $("histbl");
+    if (!panel || !tbl) return;
+    if (!ui.log.length) { panel.style.display = "none"; tbl.innerHTML = ""; return; }
+    panel.style.display = "";
+    var prev = null, rows = "";
+    ui.log.forEach(function (e, idx) {
+      var wrTxt = e.wr == null ? "…" : (e.wr * 100).toFixed(0) + "%";
+      var dTxt = "", dCls = "delta-flat";
+      if (e.wr != null && prev != null) {
+        var d = (e.wr - prev) * 100;
+        dTxt = (d > 0 ? "+" : "") + d.toFixed(0) + "%p";
+        dCls = d > 0.5 ? "delta-up" : (d < -0.5 ? "delta-down" : "delta-flat");
+      } else if (e.wr != null) {
+        dTxt = "—";
+      }
+      if (e.wr != null) prev = e.wr;
+      rows += "<tr>" +
+        "<td class='num'>" + (idx + 1) + "</td>" +
+        "<td class='who-" + e.player + "'>" + (e.player === "me" ? "나" : "상대") + "</td>" +
+        "<td>" + e.desc + "</td>" +
+        "<td class='num wrcell'>" + wrTxt + "</td>" +
+        "<td class='num " + dCls + "'>" + dTxt + "</td>" +
+        "</tr>";
+    });
+    tbl.innerHTML =
+      "<thead><tr><th class='num'>#</th><th>차례</th><th>행동</th>" +
+      "<th class='num'>내 승률</th><th class='num'>Δ</th></tr></thead>" +
+      "<tbody>" + rows + "</tbody>";
+  }
+
+  // 보드를 바꾼 수를 이력에 기록(승률은 다음 render에서 채워짐).
+  function recordLog(player, desc) {
+    var e = { player: player, desc: desc, wr: null };
+    ui.log.push(e);
+    ui._logPending = e;
   }
 
   // ---------- 솔버 ----------
@@ -295,6 +342,9 @@
   function undo() {
     if (!ui.history.length) return;
     var h = ui.history.pop();
+    // 알까기 직후(실드 배치 전) 취소면 아직 로그가 없으므로 pop 안 함.
+    if (ui._pendingAlk) ui._pendingAlk = null;
+    else ui.log.pop(); // 스냅샷 1개 = 이력 1줄 (선턴 실드 baseline은 보존)
     state = h.st;
     ui.shield = null; ui.shieldEval = null;
     ui._wrSig = null; ui._holdSig = null;
@@ -302,7 +352,7 @@
   }
 
   function restartGame() {
-    ui.history = [];
+    ui.history = []; ui.log = []; ui._logPending = null; ui._pendingAlk = null;
     state = T.newState(); ui.turn = "me"; ui.shield = null; ui.shieldEval = null;
     ui._wrSig = null; ui._holdSig = null;
     clearSelection(); render();
@@ -332,8 +382,19 @@
   }
 
   function commitMove(player, die, action) {
+    // 알까기면 제거 정보를 미리 캡처(applyAction 후엔 사라짐) → 실드 배치 로그에 사용.
+    var alk = null;
+    if (action.kind === "alkkagi") {
+      var foe = T.other(player);
+      var removed = state[foe].fields[action.i].filter(function (d) {
+        return d.value === die && !d.shield;
+      }).length;
+      alk = { side: player === "me" ? "상대" : "내", line: action.i + 1, value: die, removed: removed };
+    }
     snapshot(); // 알까기면 실드 배치까지 한 수로 묶어 되돌림
     var pending = T.applyAction(state, die, action, player);
+    if (!pending) recordLog(player, (action.i + 1) + "번 라인에 눈 " + die + " 배치");
+    else ui._pendingAlk = alk; // 알까기는 실드 배치 시점에 한 줄로 기록
     clearSelection();
     if (pending) startShield(player, true);  // 실드 배치 후 턴 전환
     else advanceAfter(player);                // 자동 턴 전환 (꽉 찬 쪽 건너뜀)
@@ -351,6 +412,7 @@
       b.className = "turnbtn"; b.textContent = pair[1];
       b.onclick = function () {
         ui.startPicking = false;
+        ui.started = true;
         $("modalBg").classList.remove("show");
         ui.turn = pair[0];
         startShield(pair[0], false, true); // 선턴 실드: 자기 판에만
@@ -446,6 +508,19 @@
       var sval = (ui.shieldEval && ui.shieldEval.map[skey]) ? ui.shieldEval.map[skey].value : ui.shield.value;
       T.applyShield(state, sval, { owner: owner, i: i }, ui.shield.player);
       var who = ui.shield.player;
+      var sside = owner === "me" ? "내" : "상대";
+      var sdesc;
+      if (ui.shield.starting) {
+        sdesc = "선턴 실드 눈 " + sval + " → " + sside + " " + (i + 1) + "번 라인 배치";
+      } else if (ui._pendingAlk) {
+        var a = ui._pendingAlk;
+        sdesc = "알까기 — " + a.side + " " + a.line + "번 라인 눈 " + a.value + " " +
+          a.removed + "개 제거 → 실드(눈 " + sval + ") " + sside + " " + (i + 1) + "번 라인 배치";
+      } else {
+        sdesc = "알까기 실드(눈 " + sval + ") " + sside + " " + (i + 1) + "번 라인 배치";
+      }
+      recordLog(who, sdesc);
+      ui._pendingAlk = null;
       ui.shield = null; ui.shieldEval = null;
       $("actionHint").textContent = ""; $("results").textContent = "";
       advanceAfter(who);  // 알까기+실드 배치 끝 -> 자동 턴 전환 (꽉 찬 쪽 건너뜀)
@@ -541,6 +616,7 @@
       var who = ui.turn;
       snapshot();
       state[who].held = true;
+      recordLog(who, "홀드");
       $("turnHint").textContent = (who === "me" ? "내가" : "상대가") + " 홀드함. ";
       advanceAfter(who); // 홀드한 쪽은 건너뜀 -> 상대만 진행
     };
@@ -556,6 +632,7 @@
 
     $("resetBtn").onclick = restartGame;
     $("restartBtn").onclick = restartGame;
+    $("startBtn").onclick = pickFirstPlayer;
     $("undoBtn").onclick = undo;
 
     // 보드 클릭 위임
@@ -574,9 +651,8 @@
       }
     });
 
-    $("turnHint").textContent = "내 주사위 눈을 고르세요.";
+    $("turnHint").textContent = "‘게임 시작’을 눌러 선턴을 정하세요.";
     render();
-    pickFirstPlayer();
   }
 
   window.addEventListener("DOMContentLoaded", init);
