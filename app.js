@@ -21,10 +21,13 @@
   var $ = function (id) { return document.getElementById(id); };
 
   // ---------- 렌더링 ----------
-  function dieEl(d) {
+  function dieEl(d, owner) {
     var e = document.createElement("div");
     e.className = "die" + (d.shield ? " shield" : "");
-    if (d.shield && d.by) e.classList.add(d.by === "me" ? "shield-me" : "shield-opp");
+    // 테두리색 = 소유/출처: 파랑=나, 빨강=상대. 실드는 깐 사람(by), 일반은 보드 주인.
+    var origin = d.shield ? (d.by || owner) : owner;
+    if (d.shield && origin) e.classList.add(origin === "me" ? "shield-me" : "shield-opp");
+    else if (origin) e.classList.add(origin === "me" ? "own-me" : "own-opp");
     e.textContent = d.value;
     return e;
   }
@@ -52,10 +55,10 @@
       if (owner === "me") {
         // 중앙(오른쪽)부터: 빈칸 먼저, 주사위는 역순(첫 주사위가 가장 안쪽)
         for (var e = f.length; e < 3; e++) slots.appendChild(mkEmpty());
-        for (var k = f.length - 1; k >= 0; k--) slots.appendChild(dieEl(f[k]));
+        for (var k = f.length - 1; k >= 0; k--) slots.appendChild(dieEl(f[k], owner));
       } else {
         // 중앙(왼쪽)부터: 주사위 먼저(첫 주사위가 가장 안쪽), 빈칸 나중
-        for (var k2 = 0; k2 < f.length; k2++) slots.appendChild(dieEl(f[k2]));
+        for (var k2 = 0; k2 < f.length; k2++) slots.appendChild(dieEl(f[k2], owner));
         for (var e2 = f.length; e2 < 3; e2++) slots.appendChild(mkEmpty());
       }
 

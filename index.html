@@ -115,16 +115,12 @@
     background: linear-gradient(160deg,#ffe39a,#f5c043); border-color: #e87a00;
     box-shadow: 0 0 8px rgba(232,122,0,.55), inset 0 -3px 0 rgba(0,0,0,.12), 0 2px 5px rgba(0,0,0,.30);
   }
-  .die.shield::after {
-    content: "S"; position: absolute; top: -6px; right: -6px; font-size: 10px; font-weight: 800;
-    background: var(--gold); color: #3a2c00; border-radius: 50%; width: 16px; height: 16px;
-    display: flex; align-items: center; justify-content: center; border: 1px solid #3a2c00;
-  }
-  /* 내가 깐 실드 = 파란 테두리/배지(나), 상대가 깐 실드 = 빨간 테두리/배지(상) */
+  /* 소유/출처 테두리색: 파랑=나, 빨강=상대 (모든 주사위 공통). 실드는 노란 채움으로 구분. */
+  .die.own-me { border-color: var(--me); box-shadow: 0 0 0 1px rgba(74,168,255,.35), inset 0 -3px 0 rgba(0,0,0,.12), 0 2px 5px rgba(0,0,0,.30); }
+  .die.own-opp { border-color: var(--opp); box-shadow: 0 0 0 1px rgba(255,122,133,.35), inset 0 -3px 0 rgba(0,0,0,.12), 0 2px 5px rgba(0,0,0,.30); }
+  /* 내가 깐 실드 = 파란 테두리, 상대가 깐 실드 = 빨간 테두리 */
   .die.shield-me { border-color: var(--me); box-shadow: 0 0 8px rgba(74,168,255,.6), inset 0 -3px 0 rgba(0,0,0,.12), 0 2px 5px rgba(0,0,0,.30); }
-  .die.shield-me::after { content: "나"; background: var(--me); color: #04203b; border-color: #04203b; }
   .die.shield-opp { border-color: var(--opp); box-shadow: 0 0 8px rgba(255,122,133,.6), inset 0 -3px 0 rgba(0,0,0,.12), 0 2px 5px rgba(0,0,0,.30); }
-  .die.shield-opp::after { content: "상"; background: var(--opp); color: #3b0606; border-color: #3b0606; }
   .slot-empty { width: 40px; height: 40px; border-radius: 10px; border: 2px dashed #313a5c; background: rgba(255,255,255,.02); }
   .fscore { font-size: 12px; color: var(--muted); }
   .fscore b { color: var(--ink); font-size: 15px; }

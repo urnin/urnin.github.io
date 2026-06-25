@@ -72,10 +72,13 @@
   }
 
   // ---------- 렌더 ----------
-  function pDie(d, pop) {
+  function pDie(d, owner, pop) {
     var e = document.createElement("div");
     e.className = "die" + (d.shield ? " shield" : "") + (pop ? " pop" : "");
-    if (d.shield && d.by) e.classList.add(d.by === "me" ? "shield-me" : "shield-opp");
+    // 테두리색 = 소유/출처: 파랑=나, 빨강=상대. 실드는 깐 사람(by), 일반은 보드 주인.
+    var origin = d.shield ? (d.by || owner) : owner;
+    if (d.shield && origin) e.classList.add(origin === "me" ? "shield-me" : "shield-opp");
+    else if (origin) e.classList.add(origin === "me" ? "own-me" : "own-opp");
     e.textContent = d.value;
     return e;
   }
@@ -115,9 +118,9 @@
       var mkE = function () { var s = document.createElement("div"); s.className = "slot-empty"; return s; };
       if (owner === "me") {
         for (var e = f.length; e < 3; e++) slots.appendChild(mkE());
-        for (var k = f.length - 1; k >= 0; k--) slots.appendChild(pDie(f[k], popNew && k === f.length - 1));
+        for (var k = f.length - 1; k >= 0; k--) slots.appendChild(pDie(f[k], owner, popNew && k === f.length - 1));
       } else {
-        for (var k2 = 0; k2 < f.length; k2++) slots.appendChild(pDie(f[k2], popNew && k2 === f.length - 1));
+        for (var k2 = 0; k2 < f.length; k2++) slots.appendChild(pDie(f[k2], owner, popNew && k2 === f.length - 1));
         for (var e2 = f.length; e2 < 3; e2++) slots.appendChild(mkE());
       }
       var sc = document.createElement("div"); sc.className = "fscore";
@@ -331,54 +334,103 @@
     setTimeout(doAi, 350);
   }
 
+  // 눈 v로 둘 때 AI(opp)가 얻는 최선 승률(무승부 0.5 포함). 둘 곳 없으면 null.
+  function oppBestWin(st, v, sims) {
+    var res = T.evaluateMovesFor(st, v, "opp", sims || 140);
+    return res.length ? 1 - res[0].winProb : null;
+  }
+
+  // 리롤은 새 눈을 보기 전에 결정해야 함(눈 v만으로). 다른 5개 눈의 기대 최선치가
+  // 지금 눈보다 충분히 높으면(>3%p) 리롤. 둘 곳 없으면 무조건 리롤.
+  function aiShouldReroll(st, v) {
+    if (!st.opp.reroll) return false;
+    var base = oppBestWin(st, v, 140);
+    if (base == null) return true;
+    var sum = 0, n = 0;
+    for (var nv = 1; nv <= 6; nv++) {
+      if (nv === v) continue;
+      var w = oppBestWin(st, nv, 110);
+      sum += Math.max(base, w == null ? base : w); n++;
+    }
+    return (sum / n) - base > 0.03;
+  }
+
+  // 두 눈 중 AI에게 더 좋은 쪽 선택.
+  function oppPickBetter(st, a, b) {
+    var wa = oppBestWin(st, a, 200), wb = oppBestWin(st, b, 200);
+    if (wa == null) return b;
+    if (wb == null) return a;
+    return wb > wa ? b : a;
+  }
+
   function doAi() {
     if (S.over) { S.busy = false; return; }
     if (T.isDone(state.opp)) { S.busy = false; advance("opp"); return; }
     S.flash = null;
     var v = T.rollDie();
     animateRoll(v, "place", function () {
-      var acts = T.legalActions(state, v, "opp");
-      if (!acts.length) {
-        S.msg = "상대 눈 " + v + " — 둘 곳 없음, 패스";
-        recordLog("opp", "눈 " + v + " — 둘 곳 없어 패스");
-        render();
-        setTimeout(function () { advance("opp"); }, 450); return;
-      }
-      var act = T.greedyAction(state, v, acts, "opp");
-      // 알까기면 내 라인의 같은 눈 개수(제거될 수) 미리 집계.
-      var removed = state.me.fields[act.i].filter(function (d) {
-        return d.value === v && !d.shield;
-      }).length;
-      var pending = T.applyAction(state, v, act, "opp");
-      if (pending) {
-        // 1단계: 알까기 발동을 먼저 보여주고 잠시 멈춤.
-        S.flash = { owner: "me", i: act.i, kind: "alk" }; // 튕겨나간 내 라인 강조
-        S.msg = "상대 알까기! 내 " + (act.i + 1) + "번 라인 눈 " + v + " " + removed +
-          "개 제거 — 실드 굴리는 중…";
+      if (aiShouldReroll(state, v)) {
+        state.opp.reroll = false;
+        var nv = rollDistinct(v);
+        S.msg = "상대 리롤! 눈 " + v + " → 다시 굴리는 중…";
         render();
         setTimeout(function () {
-          var sv = T.rollDie();
-          // 실드는 양쪽에 둘 수 있어 '칸 막기' 가치가 중요 → 몬테카를로로 평가(그리디 X).
-          animateRoll(sv, "shield", function () {
-            var spot = T.evaluateShieldFor(state, sv, "opp", 250, true)[0].spot;
-            T.applyShield(state, sv, spot, "opp");
-            var sside = spot.owner === "me" ? "내" : "상대";
-            S.flash = { owner: spot.owner, i: spot.i, kind: "shield" };
-            S.msg = "상대: 실드(" + sv + ") " + sside + " " + (spot.i + 1) + "번 라인 배치";
-            recordLog("opp", "알까기 — 내 " + (act.i + 1) + "번 라인 눈 " + v + " " + removed +
-              "개 제거 → 실드(눈 " + sv + ") " + sside + " " + (spot.i + 1) + "번 라인 배치");
+          animateRoll(nv, "place", function () {
+            var pick = oppPickBetter(state, v, nv);
+            S.msg = "상대 리롤: 눈 " + v + " / " + nv + " → 눈 " + pick + " 선택";
             render();
-            setTimeout(function () { advance("opp"); }, 850);
+            setTimeout(function () { aiPlay(pick, "리롤(" + v + "/" + nv + ") "); }, 600);
           });
-        }, 1500);
+        }, 550);
         return;
       }
-      S.flash = { owner: "opp", i: act.i, kind: "place" };
-      S.msg = "상대: 눈 " + v + " → " + (act.i + 1) + "번 라인 배치";
-      recordLog("opp", (act.i + 1) + "번 라인에 눈 " + v + " 배치");
-      render();
-      setTimeout(function () { advance("opp"); }, 500);
+      aiPlay(v, "");
     });
+  }
+
+  // AI가 눈 v를 실제로 두는 단계. rr: 메시지/이력 접두(리롤 표기 등).
+  function aiPlay(v, rr) {
+    var acts = T.legalActions(state, v, "opp");
+    if (!acts.length) {
+      S.msg = "상대 " + rr + "눈 " + v + " — 둘 곳 없음, 패스";
+      recordLog("opp", rr + "눈 " + v + " — 둘 곳 없어 패스");
+      render();
+      setTimeout(function () { advance("opp"); }, 450); return;
+    }
+    var act = T.greedyAction(state, v, acts, "opp");
+    // 알까기면 내 라인의 같은 눈 개수(제거될 수) 미리 집계.
+    var removed = state.me.fields[act.i].filter(function (d) {
+      return d.value === v && !d.shield;
+    }).length;
+    var pending = T.applyAction(state, v, act, "opp");
+    if (pending) {
+      // 1단계: 알까기 발동을 먼저 보여주고 잠시 멈춤.
+      S.flash = { owner: "me", i: act.i, kind: "alk" }; // 튕겨나간 내 라인 강조
+      S.msg = "상대 " + rr + "알까기! 내 " + (act.i + 1) + "번 라인 눈 " + v + " " + removed +
+        "개 제거 — 실드 굴리는 중…";
+      render();
+      setTimeout(function () {
+        var sv = T.rollDie();
+        // 실드는 양쪽에 둘 수 있어 '칸 막기' 가치가 중요 → 몬테카를로로 평가(그리디 X).
+        animateRoll(sv, "shield", function () {
+          var spot = T.evaluateShieldFor(state, sv, "opp", 250, true)[0].spot;
+          T.applyShield(state, sv, spot, "opp");
+          var sside = spot.owner === "me" ? "내" : "상대";
+          S.flash = { owner: spot.owner, i: spot.i, kind: "shield" };
+          S.msg = "상대: 실드(" + sv + ") " + sside + " " + (spot.i + 1) + "번 라인 배치";
+          recordLog("opp", rr + "알까기 — 내 " + (act.i + 1) + "번 라인 눈 " + v + " " + removed +
+            "개 제거 → 실드(눈 " + sv + ") " + sside + " " + (spot.i + 1) + "번 라인 배치");
+          render();
+          setTimeout(function () { advance("opp"); }, 850);
+        });
+      }, 1500);
+      return;
+    }
+    S.flash = { owner: "opp", i: act.i, kind: "place" };
+    S.msg = "상대: " + rr + "눈 " + v + " → " + (act.i + 1) + "번 라인 배치";
+    recordLog("opp", rr + (act.i + 1) + "번 라인에 눈 " + v + " 배치");
+    render();
+    setTimeout(function () { advance("opp"); }, 500);
   }
 
   // ---------- 게임 시작 ----------
